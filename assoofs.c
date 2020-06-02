@@ -275,6 +275,91 @@ static void __exit assoofs_exit(void) {
     // Control de errores a partir del valor de ret
 }
 
+// funciones auxiliares
+int assoofs_sb_get_a_freeblock(struct super_block *sb, uint64_t *block){
+	//obtener la informacion persistente del superbloque.
+	struct assoofs_super_block_info *assoofs_sb = sb->s_fs_info;
+	
+	int i;
+	for (i = 2; i < ASSOOFS_MAX_FILESYSTEM_OBJECTS_SUPPORTED; i++)
+		if (assoofs_sb->free_blocks & (1 << i))
+			break; // cuando aparece el primer bit 1 en free_block dejamos de recorrer el mapa de bits, i tiene la posicion del primer bloque libre
+
+	*block = i; // Escribimos el valor de i en la direccion de memoria indicada como segundo argumento en la funcion
+
+	//Actualizar el valor de free_blocks y guardar los cambios en el superbloque
+	assoofs_sb->free_blocks &= ~(1 << i);
+	assoofs_save_sb_info(sb);
+	return 0;
+}
+
+void assoofs_save_sb_info(struct super_block *vsb){
+	
+	// leer de disco la informacion persistente del superbloque con sb_bread y sobreescribir el campo b_data con la informacion en memoria:
+	struct buffer_head *bh;
+	struct assoofs_super_block *sb = vsb->s_fs_info; // Informacion persistente del superbloque en memoria
+	bh = sb_bread(vsb, ASSOOFS_SUPERBLOCK_BLOCK_NUMBER);
+	bh->b_data = (char *)sb; // Sobreescribo los datos de disco con la informacion en memoria
+
+	// marcar el buffer como sucio y sincronizar para que el cambio pase a disco
+	mark_buffer_dirty(bh);
+	sync_dirty_buffer(bh);
+	brelse(bh);
+}
+
+// guardar en disco la informacion persistente de un nuevo inodo
+void assoofs_add_inode_info(struct super_block *sb, struct assoofs_inode_info *inode){
+
+	// acceder a la informacion persistente en el superbloque para obtener el contador de inodos
+	uint64_t count;
+	count = ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count; // obtengo el numero de inodos de la informacion persistente del superbloque
+
+	// leer de disco el bloque que contiene el almacen de inodos
+	struct buffer_head *bh;
+	bh = sb_bread(sb, ASSOOFS_INODESTORE_BLOCK_NUMBER);
+
+	// obtener un puntero al final del almacen y escribir un nuevo valor al final
+	struct assoofs_super_block_info *assoofs_sb;
+	inode_info = (struct assoofs_inode_info *)bh->b_data;
+	inode_info += assoofs_sb->inodes_count;
+	memcpy(inode_info, inode, sizeof(struct assoofs_inode_info));
+
+	// marcar el bloque como sucio y sincronizar
+	mark_buffer_dirty(bh);
+	sync_dirty_buffer(bh);
+
+	// actualizar el contador de inodos de la informacion persistente del superbloque y guardar los cambios
+	assoofs_sb->inodes_count++;
+	assoofs_save_sb_info(sb);
+}
+
+// actualizar en disco la informacion persistente de un inodo
+int assoofs_save_inode_info(struct super_block *sb, struct assoofs_inode_info *inode_info){
+
+	// obtener de disco el almacen de inodos
+	struct buffer_head *bh;
+	bh = sb_bread(sb, ASSOOFS_INODESTORE_BLOCK_NUMBER);
+
+	// buscar los datos de inode_info en el almacen
+}
+
+// obtener un puntero a la informacion persistente de un inodo concreto
+struct assoofs_inode_info *assoofs_search_inode_info(struct super_block *sb, struct assoofs_inode_info *start, struct
+assoofs_inode_info *search){
+
+	// recorrer el almacen de inodos hasta encontrar los datos del inodo
+	uint64_t count = 0;
+	while (start->inode_no != search->inode_no && count < ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count) {
+		count++;
+		start++;
+	}
+
+	if (start->inode_no == search->inode_no)
+		return start;
+	else
+		return NULL;
+}
+
 module_init(assoofs_init);
 module_exit(assoofs_exit);
 
