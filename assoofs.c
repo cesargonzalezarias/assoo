@@ -16,6 +16,42 @@ const struct file_operations assoofs_file_operations = {
     .write = assoofs_write,
 };
 
+// obtener un puntero a la informacion persistente de un inodo concreto
+struct assoofs_inode_info *assoofs_search_inode_info(struct super_block *sb, struct assoofs_inode_info *start, struct
+assoofs_inode_info *search){
+
+	// recorrer el almacen de inodos hasta encontrar los datos del inodo
+	uint64_t count = 0;
+	while (start->inode_no != search->inode_no && count < ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count) {
+		count++;
+		start++;
+	}
+
+	if (start->inode_no == search->inode_no)
+		return start;
+	else
+		return NULL;
+}
+
+// actualizar en disco la informacion persistente de un inodo
+int assoofs_save_inode_info(struct super_block *sb, struct assoofs_inode_info *inode_info){
+
+	// obtener de disco el almacen de inodos
+	struct buffer_head *bh;
+	bh = sb_bread(sb, ASSOOFS_INODESTORE_BLOCK_NUMBER);
+
+	// buscar los datos de inode_info en el almacen
+	struct assoofs_inode_info *inode_pos;
+	inode_pos = assoofs_search_inode_info(sb, (struct assoofs_inode_info *)bh->b_data, inode_info);
+
+	// actualizar el inodo
+	memcpy(inode_pos, inode_info, sizeof(*inode_pos));
+	mark_buffer_dirty(bh);
+	sync_dirty_buffer(bh);
+
+	return 0;
+}
+
 ssize_t assoofs_read(struct file * filp, char __user * buf, size_t len, loff_t * ppos) {
     printk(KERN_INFO "Read request\n");
 
@@ -46,13 +82,18 @@ ssize_t assoofs_read(struct file * filp, char __user * buf, size_t len, loff_t *
 ssize_t assoofs_write(struct file * filp, const char __user * buf, size_t len, loff_t * ppos) {
     printk(KERN_INFO "Write request\n");
 
+    struct buffer_head *bh;
     char *buffer;
+    struct assoofs_inode_info *inode_info = filp->f_path.dentry->d_inode->i_private;
+    struct assoofs_super_block_info *assoofs_sb;
+    struct super_block *sb;
     
+    bh = sb_bread(filp->f_path.dentry->d_inode->i_sb, inode_info->data_block_number);
     buffer = (char *)bh->b_data;
 	buffer += *ppos;
-	copy_from_user(buffer, buf, len)
+	copy_from_user(buffer, buf, len);
 
-	*ppos += len;
+	ppos += len;
 	mark_buffer_dirty(bh);
 	sync_dirty_buffer(bh);
 
@@ -70,26 +111,6 @@ const struct file_operations assoofs_dir_operations = {
     .owner = THIS_MODULE,
     .iterate = assoofs_iterate,
 };
-
-
-// funciones auxiliares
-
-// obtener un puntero a la informacion persistente de un inodo concreto
-struct assoofs_inode_info *assoofs_search_inode_info(struct super_block *sb, struct assoofs_inode_info *start, struct
-assoofs_inode_info *search){
-
-	// recorrer el almacen de inodos hasta encontrar los datos del inodo
-	uint64_t count = 0;
-	while (start->inode_no != search->inode_no && count < ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count) {
-		count++;
-		start++;
-	}
-
-	if (start->inode_no == search->inode_no)
-		return start;
-	else
-		return NULL;
-}
 
 void assoofs_save_sb_info(struct super_block *vsb){
 	
@@ -146,25 +167,6 @@ void assoofs_add_inode_info(struct super_block *sb, struct assoofs_inode_info *i
 	// actualizar el contador de inodos de la informacion persistente del superbloque y guardar los cambios
 	assoofs_sb->inodes_count++;
 	assoofs_save_sb_info(sb);
-}
-
-// actualizar en disco la informacion persistente de un inodo
-int assoofs_save_inode_info(struct super_block *sb, struct assoofs_inode_info *inode_info){
-
-	// obtener de disco el almacen de inodos
-	struct buffer_head *bh;
-	bh = sb_bread(sb, ASSOOFS_INODESTORE_BLOCK_NUMBER);
-
-	// buscar los datos de inode_info en el almacen
-	struct assoofs_inode_info *inode_pos;
-	inode_pos = assoofs_search_inode_info(sb, (struct assoofs_inode_info *)bh->b_data, inode_info);
-
-	// actualizar el inodo
-	memcpy(inode_pos, inode_info, sizeof(*inode_pos));
-	mark_buffer_dirty(bh);
-	sync_dirty_buffer(bh);
-
-	return 0;
 }
 
 
@@ -234,7 +236,9 @@ static int assoofs_iterate(struct file *filp, struct dir_context *ctx) {
     // acceder al inodo, a la informacion persistente del inodo, y al superbloque del argumento filp
     struct inode *inode;
 	struct super_block *sb;
-	assoofs_inode_info *inode_info;
+	struct assoofs_inode_info *inode_info;
+	struct assoofs_dir_record_entry *record;
+	int i;
 	inode = filp->f_path.dentry->d_inode;
 	sb = inode->i_sb;
 	inode_info = inode->i_private;
