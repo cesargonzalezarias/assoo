@@ -38,6 +38,23 @@ const struct file_operations assoofs_dir_operations = {
 
 // funciones auxiliares
 
+// obtener un puntero a la informacion persistente de un inodo concreto
+struct assoofs_inode_info *assoofs_search_inode_info(struct super_block *sb, struct assoofs_inode_info *start, struct
+assoofs_inode_info *search){
+
+	// recorrer el almacen de inodos hasta encontrar los datos del inodo
+	uint64_t count = 0;
+	while (start->inode_no != search->inode_no && count < ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count) {
+		count++;
+		start++;
+	}
+
+	if (start->inode_no == search->inode_no)
+		return start;
+	else
+		return NULL;
+}
+
 void assoofs_save_sb_info(struct super_block *vsb){
 	
 	// leer de disco la informacion persistente del superbloque con sb_bread y sobreescribir el campo b_data con la informacion en memoria:
@@ -114,22 +131,6 @@ int assoofs_save_inode_info(struct super_block *sb, struct assoofs_inode_info *i
 	return 0;
 }
 
-// obtener un puntero a la informacion persistente de un inodo concreto
-struct assoofs_inode_info *assoofs_search_inode_info(struct super_block *sb, struct assoofs_inode_info *start, struct
-assoofs_inode_info *search){
-
-	// recorrer el almacen de inodos hasta encontrar los datos del inodo
-	uint64_t count = 0;
-	while (start->inode_no != search->inode_no && count < ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count) {
-		count++;
-		start++;
-	}
-
-	if (start->inode_no == search->inode_no)
-		return start;
-	else
-		return NULL;
-}
 
 /*
  *  Operaciones sobre inodos
@@ -273,7 +274,7 @@ static int assoofs_create(struct inode *dir, struct dentry *dentry, umode_t mode
 	parent_inode_info->dir_children_count++;
 	assoofs_save_inode_info(sb, parent_inode_info);
    
-    return -1;
+    return 0;
 }
 
 static int assoofs_mkdir(struct inode *dir , struct dentry *dentry, umode_t mode) {
