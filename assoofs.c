@@ -390,7 +390,7 @@ static int assoofs_mkdir(struct inode *dir , struct dentry *dentry, umode_t mode
 	inode->i_op = &assoofs_inode_ops;
 	inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
 
-	inode_init_owner(inode, dir, mode);
+	inode_init_owner(inode, dir, inode_info->mode);
 	d_add(dentry, inode);
 
 	assoofs_sb_get_a_freeblock(sb, &inode_info->data_block_number);
