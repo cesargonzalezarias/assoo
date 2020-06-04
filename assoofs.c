@@ -36,10 +36,13 @@ assoofs_inode_info *search){
 // actualizar en disco la informacion persistente de un inodo
 int assoofs_save_inode_info(struct super_block *sb, struct assoofs_inode_info *inode_info){
 
-	// obtener de disco el almacen de inodos
+	struct assoofs_super_block_info *assoofs_sb;
 	struct buffer_head *bh;
 	struct assoofs_inode_info *inode_pos;
+	
 	bh = sb_bread(sb, ASSOOFS_INODESTORE_BLOCK_NUMBER);
+	inode_info = (struct assoofs_inode_info *)bh->b_data;
+	assoofs_sb = (struct assoofs_super_block_info *)bh->b_data;
 
 	// buscar los datos de inode_info en el almacen
 	inode_pos = assoofs_search_inode_info(sb, (struct assoofs_inode_info *)bh->b_data, inode_info);
@@ -49,6 +52,7 @@ int assoofs_save_inode_info(struct super_block *sb, struct assoofs_inode_info *i
 	mark_buffer_dirty(bh);
 	sync_dirty_buffer(bh);
 
+	brelse(bh);
 	return 0;
 }
 
@@ -85,7 +89,6 @@ ssize_t assoofs_write(struct file * filp, const char __user * buf, size_t len, l
     struct buffer_head *bh;
     char *buffer;
     struct assoofs_inode_info *inode_info = filp->f_path.dentry->d_inode->i_private;
-    struct assoofs_super_block_info *assoofs_sb;
     struct super_block *sb = filp->f_path.dentry->d_inode->i_sb;
 
     printk(KERN_INFO "Write request\n");
@@ -152,18 +155,17 @@ int assoofs_sb_get_a_freeblock(struct super_block *sb, uint64_t *block){
 void assoofs_add_inode_info(struct super_block *sb, struct assoofs_inode_info *inode){
 
 	// acceder a la informacion persistente en el superbloque para obtener el contador de inodos
-	uint64_t count;
 	struct buffer_head *bh;
-	struct assoofs_super_block_info *assoofs_sb;
-	count = ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count; // obtengo el numero de inodos de la informacion persistente del superbloque
+	struct assoofs_super_block_info *assoofs_sb = sb->s_fs_info;
+	struct assoofs_inode_info *inode_info;
 
 	// leer de disco el bloque que contiene el almacen de inodos
 	bh = sb_bread(sb, ASSOOFS_INODESTORE_BLOCK_NUMBER);
 
 	// obtener un puntero al final del almacen y escribir un nuevo valor al final
-	inode = (struct assoofs_inode_info *)bh->b_data;
-	inode += assoofs_sb->inodes_count;
-	memcpy(inode, inode, sizeof(struct assoofs_inode_info));
+	inode_info = (struct assoofs_inode_info *)bh->b_data;
+	inode_info += assoofs_sb->inodes_count;
+	memcpy(inode_info, inode, sizeof(struct assoofs_inode_info));
 
 	// marcar el bloque como sucio y sincronizar
 	mark_buffer_dirty(bh);
@@ -319,6 +321,12 @@ static int assoofs_create(struct inode *dir, struct dentry *dentry, umode_t mode
 	}
 	inode->i_ino = count + 1; // Asigno numero al nuevo inodo a partir de count
 
+	inode->i_ino = count + 1;
+	inode->i_sb = sb;
+	inode->i_op = &assoofs_inode_ops;
+	inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+	inode->i_fop=&assoofs_file_operations;
+
 	inode_info = kmalloc(sizeof(struct assoofs_inode_info), GFP_KERNEL);
 	inode_info->inode_no = inode->i_ino;
 	inode_info->mode = mode; // mode me llega como argumento
@@ -326,7 +334,6 @@ static int assoofs_create(struct inode *dir, struct dentry *dentry, umode_t mode
 	inode->i_private = inode_info;
 	inode_init_owner(inode, dir, mode);
 	d_add(dentry, inode);
-	inode->i_fop=&assoofs_file_operations;
 
 	assoofs_sb_get_a_freeblock(sb, &inode_info->data_block_number);
 	assoofs_add_inode_info(sb, inode_info);
@@ -377,9 +384,14 @@ static int assoofs_mkdir(struct inode *dir , struct dentry *dentry, umode_t mode
 	inode_info->mode = S_IFDIR | mode; // mode me llega como argumento
 	inode_info->file_size = 0;
 	inode->i_private = inode_info;
+
+	inode->i_fop = &assoofs_dir_operations;
+	inode->i_sb = sb;
+	inode->i_op = &assoofs_inode_ops;
+	inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+
 	inode_init_owner(inode, dir, mode);
 	d_add(dentry, inode);
-	inode->i_fop=&assoofs_dir_operations;
 
 	assoofs_sb_get_a_freeblock(sb, &inode_info->data_block_number);
 	assoofs_add_inode_info(sb, inode_info);
@@ -499,6 +511,9 @@ static int __init assoofs_init(void) {
 static void __exit assoofs_exit(void) {
     int ret = unregister_filesystem(&assoofs_type);
     printk(KERN_INFO "assoofs_exit request\n");
+    if(ret){
+    	printk(KERN_INFO "assoofs_exit ERROR");
+    }
     // Control de errores a partir del valor de ret
 }
 
