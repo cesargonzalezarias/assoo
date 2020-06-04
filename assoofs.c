@@ -463,6 +463,12 @@ static struct dentry *assoofs_mount(struct file_system_type *fs_type, int flags,
     struct dentry *ret = mount_bdev(fs_type, flags, dev_name, data, assoofs_fill_super);
     printk(KERN_INFO "assoofs_mount request\n");
     // Control de errores a partir del valor de ret. En este caso se puede utilizar la macro IS_ERR: if (IS_ERR(ret)) ...
+    if(IS_ERR(ret)){
+    	printk(KERN_INFO "mount ERROR\n");
+    }else{
+    	printk(KERN_INFO "mount SUCCESFULL\n");
+    }
+    return ret;
 }
 
 /*
