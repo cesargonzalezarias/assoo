@@ -73,6 +73,9 @@ ssize_t assoofs_read(struct file * filp, char __user * buf, size_t len, loff_t *
 
 	// incrementar el valor de ppos y devolver el numero de bytes leidos
 	*ppos += nbytes;
+
+	printk(KERN_INFO "Read SUCCESFULL\n");
+
 	return nbytes;
 
 }
@@ -83,7 +86,7 @@ ssize_t assoofs_write(struct file * filp, const char __user * buf, size_t len, l
     char *buffer;
     struct assoofs_inode_info *inode_info = filp->f_path.dentry->d_inode->i_private;
     struct assoofs_super_block_info *assoofs_sb;
-    struct super_block *sb;
+    struct super_block *sb = filp->f_path.dentry->d_inode->i_sb;
 
     printk(KERN_INFO "Write request\n");
     
@@ -92,12 +95,15 @@ ssize_t assoofs_write(struct file * filp, const char __user * buf, size_t len, l
 	buffer += *ppos;
 	copy_from_user(buffer, buf, len);
 
-	ppos += len;
+	*ppos += len;
 	mark_buffer_dirty(bh);
 	sync_dirty_buffer(bh);
 
 	inode_info->file_size = *ppos;
 	assoofs_save_inode_info(sb, inode_info);
+	
+	printk(KERN_INFO "Writed SUCCESFULL\n");
+	brelse(bh);
 	return len;
 	
 }
@@ -486,6 +492,7 @@ static int __init assoofs_init(void) {
     int ret = register_filesystem(&assoofs_type);
     printk(KERN_INFO "assoofs_init request\n");
     // Control de errores a partir del valor de ret
+    return ret;
 }
 
 // eliminar la informaci ́on del nuevo sistema de ficheros del kernel.
